@@ -1,0 +1,80 @@
+# Builds the release zip on a Windows machine with Visual Studio (no Windows PC needed).
+# - Every push: builds the DLL and the zip and keeps the zip as a download on the run's page (a check that it builds).
+# - Actions tab -> "Build and release" -> Run workflow (on main) with "publish" ticked: also makes the GitHub release
+#   v<kModVersion> with the zip attached, title and text from docs/release-notes/v<version>.md.
+# The mod file (bmpShare.pkm) needs the Banished Mod Kit, which this machine doesn't have. While mod/ is unchanged it
+# comes from an earlier release zip (inputs below); make_release.ps1 checks it is the build the DLL expects.
+name: Build and release
+
+on:
+  push:
+    branches: ['**']
+    paths-ignore: ['**.md']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish the GitHub release (otherwise only build)'
+        type: boolean
+        default: false
+      pkm_repo:
+        description: 'Repository whose release holds the bmpShare.pkm to ship'
+        default: 'BarryBareth/banished-multiplayer'
+      pkm_tag:
+        description: 'Release tag to take bmpShare.pkm from'
+        default: 'v0.9.7'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PKM_REPO: ${{ inputs.pkm_repo || 'BarryBareth/banished-multiplayer' }}
+      PKM_TAG: ${{ inputs.pkm_tag || 'v0.9.7' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the DLL and the relay
+        shell: pwsh
+        run: .\build.ps1
+
+      - name: Get bmpShare.pkm from ${{ env.PKM_REPO }} ${{ env.PKM_TAG }}
+        shell: pwsh
+        run: |
+          gh release download $env:PKM_TAG -R $env:PKM_REPO -p 'BanishedMultiplayer-*.zip' -D pkm-src
+          Expand-Archive (Get-ChildItem pkm-src\*.zip | Select-Object -First 1).FullName pkm-src\x
+          Copy-Item pkm-src\x\bmpShare.pkm pkm-src\bmpShare.pkm
+
+      - name: Pack the release zip
+        id: pack
+        shell: pwsh
+        run: |
+          .\tools\make_release.ps1 -Pkm pkm-src\bmpShare.pkm
+          $version = [regex]::Match((Get-Content src\net.cpp -Raw), 'kModVersion = "([0-9.]+)"').Groups[1].Value
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BanishedMultiplayer-${{ steps.pack.outputs.version }}
+          path: release/BanishedMultiplayer-${{ steps.pack.outputs.version }}.zip
+
+      - name: Publish release v${{ steps.pack.outputs.version }}
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        shell: pwsh
+        run: |
+          $version = '${{ steps.pack.outputs.version }}'
+          $tag = "v$version"
+          if ('${{ github.ref }}' -ne 'refs/heads/${{ github.event.repository.default_branch }}') { throw "publish from the default branch, not ${{ github.ref }}" }
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -eq 0) { throw "release $tag exists - raise kModVersion in src\net.cpp" }
+          $notesFile = "docs\release-notes\$tag.md"
+          if (-not (Test-Path $notesFile)) { throw "write $notesFile first (title and text of the release)" }
+          $notes = Get-Content $notesFile -Raw
+          $title = [regex]::Match($notes, '(?m)^\s*Title:\s*(.+?)\s*$').Groups[1].Value
+          if (-not $title) { $title = $version }
+          $body = ($notes -split '(?m)^---\s*$', 2)[1].Trim()   # the text below the first --- line
+          Set-Content release\notes.md $body -Encoding utf8
+          gh release create $tag "release\BanishedMultiplayer-$version.zip" --target '${{ github.sha }}' --title $title --notes-file release\notes.md
+          if ($LASTEXITCODE) { throw "gh release create failed" }
