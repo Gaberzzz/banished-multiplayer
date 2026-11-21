@@ -72,6 +72,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID) {
         SlotClaim();
         LogInit();
         Log("bmp loaded (pid %lu, slot %d)", GetCurrentProcessId(), g_slot);
+        if (wine::Version()) Log("running under %s", wine::Describe().c_str());
         wchar_t path[MAX_PATH];
         GetModuleFileNameW(nullptr, path, MAX_PATH);
         wcscpy_s(wcsrchr(path, L'\\') + 1, 64, L"bmp_autotest.txt");

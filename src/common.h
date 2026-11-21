@@ -34,3 +34,10 @@ void RefreshModsSignature();
 std::string ModsSignature();
 bool ModsKnown();  // RefreshModsSignature has read the list (it runs when the game starts loading its data)
 bool ModsChangedSinceStart();  // mods switched on/off since the game started: multiplayer needs a restart
+
+// Wine / Proton (Banished on Linux runs the Windows game through them). wine.cpp.
+namespace wine {
+const char* Version();                          // Wine's version ("9.0", Proton's own), or nullptr on Windows
+std::string Describe();                         // "Wine 9.0 (build ...) on Linux 6.17.1", "" on Windows
+std::string UnixPath(const std::wstring& win);  // the Linux path of a Windows path ("" on Windows or if unknown)
+}  // namespace wine

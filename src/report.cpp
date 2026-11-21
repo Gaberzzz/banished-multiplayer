@@ -126,6 +126,17 @@ struct Scrubber {
         std::string s = in;
         if (user.size() >= 2)  // the Windows user first (a player name can be part of it): paths and plain mentions
             for (size_t i = 0; (i = s.find(user, i)) != std::string::npos;) { s.replace(i, user.size(), "<user>"); i += 6; }
+        // Linux home folders (Wine/Proton: Z:\home\<name>\..., /home/<name>/..., Fedora Atomic: /var/home/<name>). Under
+        // Proton the Windows user is always "steamuser", so the Linux user name only shows up in these paths.
+        for (const char* home : {"\\home\\", "/home/"}) {
+            size_t hl = strlen(home);
+            for (size_t i = 0; (i = s.find(home, i)) != std::string::npos;) {
+                size_t a = i + hl, b = a;
+                while (b < s.size() && (Alnum(s[b]) || s[b] == '.' || s[b] == '_' || s[b] == '-')) b++;
+                if (b > a) s.replace(a, b - a, "<user>");
+                i = a;
+            }
+        }
         for (auto& [n, r] : names) {  // player names
             for (size_t i = 0; (i = s.find(n, i)) != std::string::npos;) { s.replace(i, n.size(), r); i += r.size(); }
         }
@@ -241,10 +252,14 @@ static std::vector<uint8_t> BuildZip(Job& job, std::string& listing) {
     return zipwrite::Build(entries);
 }
 
+// Where Save puts the report. Under Wine/Proton the Windows Desktop is a folder deep inside the game's Wine prefix
+// that nobody would find, so there it goes into the Banished folder instead.
+static const char* SaveFolder() { return wine::Version() ? "the Banished folder" : "your Desktop"; }
+
 static std::wstring SaveToDesktop(const std::vector<uint8_t>& zip, std::wstring& name) {
     PWSTR desk = nullptr;
     std::wstring dir;
-    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Desktop, 0, nullptr, &desk))) dir = desk;
+    if (!wine::Version() && SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Desktop, 0, nullptr, &desk))) dir = desk;
     CoTaskMemFree(desk);
     if (dir.empty()) dir = GamePath(L"").substr(0, GamePath(L"").size() - 1);
     SYSTEMTIME t;
@@ -258,7 +273,9 @@ static std::wstring SaveToDesktop(const std::vector<uint8_t>& zip, std::wstring&
     DWORD w = 0;
     WriteFile(h, zip.data(), (DWORD)zip.size(), &w, nullptr);
     CloseHandle(h);
-    return w == zip.size() ? path : L"";
+    if (w != zip.size()) return L"";
+    if (wine::Version()) Log("report: saved to %s", wine::UnixPath(path).c_str());
+    return path;
 }
 
 static std::wstring ReportUrl() {
@@ -344,18 +361,19 @@ static void Run(Job job, std::string build) {
         std::wstring name;
         std::wstring path = SaveToDesktop(zip, name);
         SetStatus("Couldn't send it (" + result + ")." + (path.empty() ? std::string(" Saving failed too.")
-                                                                         : " Saved to your Desktop instead: " + Narrow(name)));
+                                                                         : std::string(" Saved to ") + SaveFolder() + " instead: " + Narrow(name)));
         g_busy = false;
         return;
     }
     std::wstring name;
     std::wstring path = SaveToDesktop(zip, name);
     if (path.empty()) {
-        SetStatus("Couldn't save the report to the Desktop.");
+        SetStatus(std::string("Couldn't save the report to ") + SaveFolder() + ".");
     } else {
-        SetStatus("Saved to your Desktop: " + Narrow(name) + " - attach it to your bug report.");
+        SetStatus(std::string("Saved to ") + SaveFolder() + ": " + Narrow(name) + " - attach it to your bug report.");
         std::wstring args = L"/select,\"" + path + L"\"";
-        if (!autotest::Active()) ShellExecuteW(nullptr, L"open", L"explorer.exe", args.c_str(), nullptr, SW_SHOWNORMAL);
+        // (Wine's explorer.exe is its own file browser, not the player's: don't pop it up over the game)
+        if (!autotest::Active() && !wine::Version()) ShellExecuteW(nullptr, L"open", L"explorer.exe", args.c_str(), nullptr, SW_SHOWNORMAL);
     }
     g_busy = false;
 }
@@ -386,16 +404,17 @@ static Job MakeJob(bool crash, bool send, const std::string& description) {
     if (auto rgv = (RtlGetVersion_t)GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "RtlGetVersion")) rgv(&os);
     SYSTEMTIME t;
     GetSystemTime(&t);
-    char head[1024];
+    std::string wineLine = wine::Version() ? "wine: " + wine::Describe() + "\n" : std::string();
+    char head[1536];
     sprintf_s(head,
               "Banished Multiplayer bug report\n"
               "kind: %s\ntime (UTC): %04d-%02d-%02d %02d:%02d:%02d\nmod build: %s\ngame build: %s\nsession: %s\n"
-              "multiplayer: %s, %d players, %d towns, my town %d, %s\nconnection: %s\nwindows: %lu.%lu.%lu\ngraphics: %s\n\n",
+              "multiplayer: %s, %d players, %d towns, my town %d, %s\nconnection: %s\nwindows: %lu.%lu.%lu\n%sgraphics: %s\n\n",
               crash ? "crash" : "bug", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond, u.version.c_str(), gamebuild::Name(),
               sessionKey.empty() ? "-" : Hex(Fnv("bmp-session:" + sessionKey), 8).c_str(),
               u.active ? (u.hosting ? "hosting" : "joined") : "not in a session", u.players, u.towns, u.town,
               u.inGame ? "in game" : u.inMenu ? "in the menu" : "loading", steam::Lobby() ? "Steam" : !u.room.empty() ? "relay" : u.active ? "direct" : "-",
-              os.dwMajorVersion, os.dwMinorVersion, os.dwBuildNumber, overlay::RenderInfo().c_str());
+              os.dwMajorVersion, os.dwMinorVersion, os.dwBuildNumber, wineLine.c_str(), overlay::RenderInfo().c_str());
     j.manifestHead = head;
     return j;
 }
@@ -415,8 +434,9 @@ struct Window : gamedlg::Window {
         Text("bmpReportWhat",
              std::string("The report holds your mod logs, recent desync records") + (crash ? ", the crash dump" : "") +
                  " and your game and mod version. Player names, Steam ids, your Windows user name, IP addresses and room "
-                 "codes are removed. Save puts it on your Desktop; Send uploads it to the mod's developers.");
-        Text("bmpReportSave", "Save to Desktop");
+                 "codes are removed. Save puts it " + (wine::Version() ? "in the Banished folder" : "on your Desktop") +
+                 "; Send uploads it to the mod's developers.");
+        Text("bmpReportSave", wine::Version() ? "Save" : "Save to Desktop");
         Text("bmpReportSend", "Send");
         Text("bmpReportClose", "Close");
     }

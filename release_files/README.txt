@@ -28,6 +28,22 @@ To install by hand, copy the two files to the places above.
 To uninstall, double-click Uninstall.bat (or delete the two files).
 
 
+LINUX (Proton / Wine)
+---------------------
+Banished runs on Linux through Proton (Steam) or Wine (GOG), and so does this mod.
+1. Close Banished. Unpack this zip and run:   bash install.sh
+   (it finds Banished in your Steam libraries, Flatpak Steam, Heroic, Lutris or Bottles; or give it
+   the folder: bash install.sh /path/to/Banished)
+2. Once: in Steam, right-click Banished -> Properties -> General -> Launch Options:
+       WINEDLLOVERRIDES="dinput8=n,b" %command%
+   Without it Wine uses its own dinput8.dll and the mod doesn't start. (GOG launchers: install.sh
+   prints where the same setting goes.)
+3. In Banished's launcher choose the DirectX 11 renderer, then Play.
+Everybody in a game should use the same Proton version (Properties -> Compatibility). Games that mix
+Linux and Windows players haven't been tested yet. Uninstall: bash install.sh --uninstall
+More: docs/LINUX.md on the project page.
+
+
 PLAYING
 -------
 Main menu -> Multiplayer:
