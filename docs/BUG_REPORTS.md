@@ -2,8 +2,8 @@
 
 The **bug** button (Multiplayer window and the in-game bar) opens a small window: the player writes what they were
 doing, then clicks **Send** (uploads the report) or **Save** (puts it on the Desktop as
-`BanishedMP-bug-<time>.zip`, e.g. to attach to a GitHub issue). After a crash, the game offers the same window once,
-the next time it starts.
+`BanishedMP-bug-<time>.zip`, e.g. to attach to a GitHub issue; under Wine/Proton in the Banished folder, see
+[LINUX.md](LINUX.md)). After a crash, the game offers the same window once, the next time it starts.
 
 ## What a report contains
 
@@ -11,13 +11,14 @@ A zip with:
 
 | File | |
 |---|---|
-| `report.txt` | type (bug / crash), time (UTC), mod build, a session id (the same on every player's report of one game), the multiplayer state, the Windows build, the graphics setup, the player's text |
+| `report.txt` | type (bug / crash), time (UTC), mod build, a session id (the same on every player's report of one game), the multiplayer state, the Windows build, the Wine/Proton version (Linux), the graphics setup, the player's text |
 | `bmp.log`, `bmp_prev.log` | the mod's log of this and the previous run (last 3 MB each) |
 | `bmp_commands.log` | the players' recorded actions (last 1 MB) |
 | `bmp_desync_*.log` | the two newest "out of sync" records of the last two days, if any |
 | `crash.dmp` | the game's own crash file: after a crash, or if one is less than a day old |
 
-Before anything leaves the PC, the text files are cleaned: the Windows user name, every player name, Steam IDs, other
+Before anything leaves the PC, the text files are cleaned: the Windows user name (on Linux the user name in
+`/home/<name>`, `/run/media/<name>` and `/media/<name>` paths), every player name, Steam IDs, other
 long numeric IDs, IP addresses (except 127.0.0.1), room codes and join/relay addresses are replaced by placeholders.
 `crash.dmp` is a small memory snapshot of the game's threads made by the game itself; it isn't cleaned and can contain
 bits of text the game had in memory. Players who want to check first can use **Save** and look inside the zip.
@@ -31,7 +32,7 @@ line in `Banished\bmp_settings.txt`:
 bugurl=https://your.server/report
 ```
 
-If sending fails, the report is saved to the Desktop instead.
+If sending fails, the report is saved instead (Desktop, or the Banished folder under Wine/Proton).
 
 ## Running a receiver
 

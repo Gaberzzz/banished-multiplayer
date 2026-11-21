@@ -27,8 +27,11 @@ folders and `~/.wine`.
   Wine/Proton version and the Linux kernel. If that line is missing, the game isn't running under Wine.
 - **Bug reports:** **Save** puts the zip in the Banished folder instead of on the Windows Desktop. Under Proton the
   Desktop is a folder inside the game's Wine prefix (`steamapps/compatdata/242920/pfx/...`), where nobody would find
-  it. `bmp.log` records the full Linux path of the saved zip. Reports have a `wine:` line, and Linux user names in
-  folder paths (`/home/<name>/...`) are replaced with `<user>`.
+  it. The report window's status line (and `bmp.log`) gives the folder's Linux path, and no Wine file browser opens.
+  Reports have a `wine:` line, and the Linux user name in folder paths (`/home/<name>/...`, and drives mounted at
+  `/run/media/<name>/...` or `/media/<name>/...`) is replaced with `<user>`.
+- **Missing or wrong `bmpShare.pkm`:** the main-menu warning shows the Linux path of the `WinData` folder, without the
+  *Open the folder* button (it would open Wine's own file browser).
 
 ## Test checklist
 
@@ -54,8 +57,12 @@ For the first session on two Linux PCs (A hosts, B joins). Write down what fails
    show the same `mxcsr` / `x87 control` values. Repeat with *Separate towns* and a trade between the towns.
 6. **Joining a running game:** B leaves and joins again while A keeps playing. B's game should reload A's town.
 7. **Save and load:** A saves, both quit, A loads the save under *Multiplayer* → *Load town*, and B joins.
-8. **Bug report:** *bug* → *Save*. The zip appears in the Banished folder. Its `report.txt` has a `wine:` line, and
-   the logs inside show `/home/<user>/` instead of your Linux user name.
+8. **Bug report:** *bug* → *Save*. The status line names the Banished folder's Linux path, and the zip is there. Its
+   `report.txt` has a `wine:` line, and the logs inside show `/home/<user>/` (and `/run/media/<user>/` for a Steam
+   library on a second drive) instead of your Linux user name.
+9. **Installer:** run `install.sh` a second time, then `install.sh --uninstall`. The second run must not say
+   "another mod's dinput8.dll was there", and afterwards the Banished folder has no `dinput8.dll` (unless another
+   mod's was there before).
 
 If step 5 shows `DESYNC` lines, keep both PCs' `bmp_desync_*.log` files and compare them with
 `python3 tools/ringdiff.py` ([TESTING.md](TESTING.md)): it names the first thing the two games did differently.

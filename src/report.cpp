@@ -14,6 +14,7 @@
 #include <winhttp.h>
 #include <algorithm>
 #include <atomic>
+#include <cstdarg>
 #include <mutex>
 #include <set>
 #include <thread>
@@ -48,6 +49,19 @@ static std::string Hex(uint64_t v, int digits) {
     char b[24];
     sprintf_s(b, "%016llx", v);
     return std::string(b + 16 - digits);
+}
+// printf into a string of the right size (sprintf_s into a fixed buffer ends the game when the text doesn't fit)
+static std::string Format(const char* fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    int n = _vscprintf(fmt, ap);
+    va_end(ap);
+    if (n <= 0) return "";
+    std::string s(n, '\0');
+    va_start(ap, fmt);
+    vsnprintf(s.data(), (size_t)n + 1, fmt, ap);
+    va_end(ap);
+    return s;
 }
 
 // The last `max` bytes of a file (from a line start), even while another handle writes it.
@@ -126,13 +140,16 @@ struct Scrubber {
         std::string s = in;
         if (user.size() >= 2)  // the Windows user first (a player name can be part of it): paths and plain mentions
             for (size_t i = 0; (i = s.find(user, i)) != std::string::npos;) { s.replace(i, user.size(), "<user>"); i += 6; }
-        // Linux home folders (Wine/Proton: Z:\home\<name>\..., /home/<name>/..., Fedora Atomic: /var/home/<name>). Under
-        // Proton the Windows user is always "steamuser", so the Linux user name only shows up in these paths.
-        for (const char* home : {"\\home\\", "/home/"}) {
-            size_t hl = strlen(home);
-            for (size_t i = 0; (i = s.find(home, i)) != std::string::npos;) {
-                size_t a = i + hl, b = a;
-                while (b < s.size() && (Alnum(s[b]) || s[b] == '.' || s[b] == '_' || s[b] == '-')) b++;
+        // Linux paths that hold the user name. Under Proton the Windows user is always "steamuser", so the Linux user name
+        // only shows up here: home folders (/home/<name>, Fedora Atomic /var/home/<name>) and the drives the desktop
+        // mounts (Fedora /run/media/<name>/<drive>, Ubuntu /media/<name>/<drive>: where a second Steam library lives),
+        // as Linux paths or Wine's Z:\home\<name>\... The name runs to the next separator, so names with letters
+        // like é are removed whole. (A Steam Deck's SD card, /run/media/mmcblk0p1, becomes <user> too.)
+        for (const char* dir : {"/home/", "\\home\\", "/media/", "\\media\\"}) {
+            size_t dl = strlen(dir);
+            for (size_t i = 0; (i = s.find(dir, i)) != std::string::npos;) {
+                size_t a = i + dl, b = s.find_first_of("/\\ \t\r\n\"'<>:;,()[]", a);
+                if (b == std::string::npos) b = s.size();
                 if (b > a) s.replace(a, b - a, "<user>");
                 i = a;
             }
@@ -252,30 +269,53 @@ static std::vector<uint8_t> BuildZip(Job& job, std::string& listing) {
     return zipwrite::Build(entries);
 }
 
-// Where Save puts the report. Under Wine/Proton the Windows Desktop is a folder deep inside the game's Wine prefix
-// that nobody would find, so there it goes into the Banished folder instead.
-static const char* SaveFolder() { return wine::Version() ? "the Banished folder" : "your Desktop"; }
-
-static std::wstring SaveToDesktop(const std::vector<uint8_t>& zip, std::wstring& name) {
+// Where Save puts the report: the Desktop, where Explorer then shows it. Under Wine/Proton the Windows Desktop is a
+// folder deep inside the game's Wine prefix that nobody would find, and explorer.exe is Wine's own file browser, not
+// the player's: there it goes into the Banished folder, and the status line names that folder's Linux path.
+struct SavePlace {
+    std::wstring dir;       // Windows path, no trailing backslash
+    std::string where;      // for the player: "on your Desktop", "in the Banished folder"
+    std::string unixPath;   // under Wine: dir's Linux path, else ""
+    bool desktop = false;   // dir is the Desktop
+    bool explorer = false;  // Windows: show the saved zip in Explorer
+};
+static SavePlace Place() {
+    SavePlace p;
+    p.explorer = !wine::Version();
     PWSTR desk = nullptr;
-    std::wstring dir;
-    if (!wine::Version() && SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Desktop, 0, nullptr, &desk))) dir = desk;
+    if (p.explorer && SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Desktop, 0, nullptr, &desk))) {
+        p.dir = desk;
+        p.where = "on your Desktop";
+        p.desktop = true;
+    } else {
+        p.dir = GamePath(L"");
+        p.dir.pop_back();
+        p.where = "in the Banished folder";
+        p.unixPath = wine::UnixPath(p.dir);
+    }
     CoTaskMemFree(desk);
-    if (dir.empty()) dir = GamePath(L"").substr(0, GamePath(L"").size() - 1);
+    return p;
+}
+
+// Writes the zip to Place(); its file name in `name`, its path returned ("" if that failed).
+static std::wstring Save(const std::vector<uint8_t>& zip, const SavePlace& place, std::wstring& name) {
     SYSTEMTIME t;
     GetLocalTime(&t);
     wchar_t n[96];
     swprintf_s(n, L"BanishedMP-bug-%04d%02d%02d-%02d%02d%02d.zip", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
     name = n;
-    std::wstring path = dir + L"\\" + n;
+    std::wstring path = place.dir + L"\\" + n;
     HANDLE h = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
     if (h == INVALID_HANDLE_VALUE) return L"";
     DWORD w = 0;
     WriteFile(h, zip.data(), (DWORD)zip.size(), &w, nullptr);
     CloseHandle(h);
-    if (w != zip.size()) return L"";
-    if (wine::Version()) Log("report: saved to %s", wine::UnixPath(path).c_str());
-    return path;
+    return w == zip.size() ? path : L"";
+}
+
+// "Saved in the Banished folder (/home/<name>/...): BanishedMP-bug-....zip"
+static std::string Saved(const SavePlace& place, const std::wstring& name) {
+    return "Saved " + place.where + (place.unixPath.empty() ? std::string() : " (" + place.unixPath + ")") + ": " + Narrow(name);
 }
 
 static std::wstring ReportUrl() {
@@ -349,31 +389,27 @@ static void Run(Job job, std::string build) {
     std::string listing;
     std::vector<uint8_t> zip = BuildZip(job, listing);
     Log("report: built %zu KB (%s)", zip.size() / 1024, job.send ? "send" : "save");
+    std::string result;
     if (job.send) {
         SetStatus("Sending the report (" + std::to_string(zip.size() / 1024) + " KB)...");
-        std::string result;
         if (Upload(zip, build, result)) {
             g_sent = true;
             SetStatus("Sent - thank you!" + (result.empty() ? std::string() : " Report number: " + result));
             g_busy = false;
             return;
         }
-        std::wstring name;
-        std::wstring path = SaveToDesktop(zip, name);
-        SetStatus("Couldn't send it (" + result + ")." + (path.empty() ? std::string(" Saving failed too.")
-                                                                         : std::string(" Saved to ") + SaveFolder() + " instead: " + Narrow(name)));
-        g_busy = false;
-        return;
     }
+    SavePlace place = Place();
     std::wstring name;
-    std::wstring path = SaveToDesktop(zip, name);
-    if (path.empty()) {
-        SetStatus(std::string("Couldn't save the report to ") + SaveFolder() + ".");
+    std::wstring path = Save(zip, place, name);
+    if (job.send) {
+        SetStatus("Couldn't send it (" + result + ")." + (path.empty() ? " Saving failed too." : " " + Saved(place, name)));
+    } else if (path.empty()) {
+        SetStatus("Couldn't save the report " + place.where + ".");
     } else {
-        SetStatus(std::string("Saved to ") + SaveFolder() + ": " + Narrow(name) + " - attach it to your bug report.");
+        SetStatus(Saved(place, name) + " - attach it to your bug report.");
         std::wstring args = L"/select,\"" + path + L"\"";
-        // (Wine's explorer.exe is its own file browser, not the player's: don't pop it up over the game)
-        if (!autotest::Active() && !wine::Version()) ShellExecuteW(nullptr, L"open", L"explorer.exe", args.c_str(), nullptr, SW_SHOWNORMAL);
+        if (place.explorer && !autotest::Active()) ShellExecuteW(nullptr, L"open", L"explorer.exe", args.c_str(), nullptr, SW_SHOWNORMAL);
     }
     g_busy = false;
 }
@@ -405,8 +441,7 @@ static Job MakeJob(bool crash, bool send, const std::string& description) {
     SYSTEMTIME t;
     GetSystemTime(&t);
     std::string wineLine = wine::Version() ? "wine: " + wine::Describe() + "\n" : std::string();
-    char head[1536];
-    sprintf_s(head,
+    j.manifestHead = Format(
               "Banished Multiplayer bug report\n"
               "kind: %s\ntime (UTC): %04d-%02d-%02d %02d:%02d:%02d\nmod build: %s\ngame build: %s\nsession: %s\n"
               "multiplayer: %s, %d players, %d towns, my town %d, %s\nconnection: %s\nwindows: %lu.%lu.%lu\n%sgraphics: %s\n\n",
@@ -415,7 +450,6 @@ static Job MakeJob(bool crash, bool send, const std::string& description) {
               u.active ? (u.hosting ? "hosting" : "joined") : "not in a session", u.players, u.towns, u.town,
               u.inGame ? "in game" : u.inMenu ? "in the menu" : "loading", steam::Lobby() ? "Steam" : !u.room.empty() ? "relay" : u.active ? "direct" : "-",
               os.dwMajorVersion, os.dwMinorVersion, os.dwBuildNumber, wineLine.c_str(), overlay::RenderInfo().c_str());
-    j.manifestHead = head;
     return j;
 }
 
@@ -431,12 +465,12 @@ struct Window : gamedlg::Window {
         Text("bmpReportTitle", crash ? "The game crashed" : "Report a bug");
         Text("bmpReportIntro", crash ? "Sorry - Banished closed unexpectedly last time. A report helps us fix it. What were you doing when it happened?"
                                      : "What went wrong, and what were you doing at the time?");
+        SavePlace place = Place();
         Text("bmpReportWhat",
              std::string("The report holds your mod logs, recent desync records") + (crash ? ", the crash dump" : "") +
-                 " and your game and mod version. Player names, Steam ids, your Windows user name, IP addresses and room "
-                 "codes are removed. Save puts it " + (wine::Version() ? "in the Banished folder" : "on your Desktop") +
-                 "; Send uploads it to the mod's developers.");
-        Text("bmpReportSave", wine::Version() ? "Save" : "Save to Desktop");
+                 " and your game and mod version. Player names, Steam ids, your user name, IP addresses and room "
+                 "codes are removed. Save puts it " + place.where + "; Send uploads it to the mod's developers.");
+        Text("bmpReportSave", place.desktop ? "Save to Desktop" : "Save");
         Text("bmpReportSend", "Send");
         Text("bmpReportClose", "Close");
     }

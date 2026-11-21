@@ -48,6 +48,14 @@ function Is-Ours([string]$dll) {  # our DLL carries the text "BanishedMP" (UTF-1
     return [Text.Encoding]::Unicode.GetString($b).Contains('BanishedMP')
 }
 
+function Same-File([string]$a, [string]$b) {  # the zip unpacked straight into the game folder (or WinData)
+    return (Test-Path $a) -and (Test-Path $b) -and ((Resolve-Path $a).Path -eq (Resolve-Path $b).Path)
+}
+
+function Put([string]$src, [string]$dst) {  # Copy-Item refuses to copy a file onto itself
+    if (-not (Same-File $src $dst)) { Copy-Item $src $dst -Force }
+}
+
 try {
     $games = @(Find-Banished)
     if (-not $games) { throw "Couldn't find Banished. Unpack this folder into the Banished folder (the one with Application-steam-x64.exe or Application-x64.exe) and run it again." }
@@ -62,7 +70,13 @@ try {
         $pkm = Join-Path $game 'WinData\bmpShare.pkm'
         if ($Uninstall) {
             if ((Test-Path $dll) -and (Is-Ours $dll)) { Remove-Item $dll; Write-Host '  removed dinput8.dll' }
-            if (Test-Path $backup) { Move-Item $backup $dll; Write-Host '  put the other mod''s dinput8.dll back' }
+            if (Test-Path $backup) {
+                if (Test-Path $dll) {  # yet another mod's dinput8.dll came after ours: leave it, and the backup, alone
+                    Write-Host '  dinput8.dll belongs to another mod: left it, and the older one stays in dinput8.dll.bmp-backup' -ForegroundColor Yellow
+                } else {
+                    Move-Item $backup $dll; Write-Host '  put the other mod''s dinput8.dll back'
+                }
+            }
             if (Test-Path $pkm) { Remove-Item $pkm; Write-Host '  removed WinData\bmpShare.pkm' }
             continue
         }
@@ -70,16 +84,16 @@ try {
             Move-Item $dll $backup
             Write-Host '  another mod''s dinput8.dll was there: kept as dinput8.dll.bmp-backup (Uninstall puts it back)' -ForegroundColor Yellow
         }
-        Copy-Item (Join-Path $here 'dinput8.dll') $dll -Force
+        Put (Join-Path $here 'dinput8.dll') $dll
         # subscribed on the Steam Workshop: Steam keeps the mod file up to date - no second copy in WinData
         $workshop = Join-Path (Split-Path (Split-Path $game)) 'workshop\content\242920'
         $sub = if (Test-Path $workshop) { Get-ChildItem $workshop -Recurse -Filter 'bmpShare.pkm' -ErrorAction SilentlyContinue | Select-Object -First 1 }
         if ($sub) {
-            if (Test-Path $pkm) { Remove-Item $pkm }
+            if ((Test-Path $pkm) -and -not (Same-File (Join-Path $here 'bmpShare.pkm') $pkm)) { Remove-Item $pkm }
             Write-Host '  mod file: using your Steam Workshop subscription'
         } else {
             New-Item -ItemType Directory -Force (Split-Path $pkm) | Out-Null
-            Copy-Item (Join-Path $here 'bmpShare.pkm') $pkm -Force
+            Put (Join-Path $here 'bmpShare.pkm') $pkm
         }
     }
     Write-Host ''
