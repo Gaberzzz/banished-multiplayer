@@ -21,6 +21,7 @@ player on the main menu when a higher version is out.
 4. **Test the zip** on a clean install: unpack it, run Install.bat, start a game with a second PC or instance.
 5. **Publish on GitHub**: Releases → *Draft a new release* → tag `v<version>` (e.g. `v0.9.1`) → attach the zip →
    the release title is shown to players as the update note (e.g. "Fixes trading between towns").
+   Write the notes in [`docs/release-notes/v<version>.md`](release-notes/) first and paste them in as the description.
 6. **Update the Workshop item** with the same `bmpShare.pkm`: copy `mod\bmpShare.pkm` into `Banished\WinData`, start
    Banished, open **Mods**, click the **...** button of the mod → **Add to Workshop** the first time, **Update Mod on
    Workshop** afterwards (pick the right item). The game needs the kit's build output (`mod\work`, `mod\bin`) still on
