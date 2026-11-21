@@ -19,7 +19,7 @@ game that's already running.
 - **Banished 1.0.7** (the normal 64-bit game), the **Steam or GOG version**. Steam and GOG players can play together.
   On GOG there is no Steam connection: use a relay server or a direct connection (see below). Other builds of the
   game have a different program file; the mod switches itself off there and says so.
-- Windows 10 or 11.
+- Windows 10 or 11, or **Linux** (e.g. Fedora) through Proton or Wine: see [Linux](#linux) below.
 - **Everybody in a game needs the same version of this mod.** The game tells you when the host's version differs.
 
 ## Install
@@ -45,6 +45,14 @@ game's code is what antivirus programs look for, so this is expected; the full s
 To install by hand, copy the two files to the places above. To uninstall, run **Uninstall.bat** (or delete the two
 files). Your settings and logs (`bmp_*.txt`, `bmp*.log` in the Banished folder) are left behind; delete them if
 you like.
+
+### Linux
+
+Banished runs on Linux through Proton (Steam) or Wine (GOG), and so does the mod: same zip. Unpack it, run
+`bash install.sh`, then set Banished's Steam launch options to `WINEDLLOVERRIDES="dinput8=n,b" %command%` (Wine
+otherwise uses its own `dinput8.dll` and the mod doesn't start). All players in a game should use the same Proton
+version. Details, GOG launchers and a test checklist: [docs/LINUX.md](docs/LINUX.md). Games that mix Linux and Windows
+players haven't been tested yet.
 
 ## Playing
 
@@ -120,6 +128,7 @@ the line `updatecheck=0` to `Banished\bmp_settings.txt`.
 ## For developers
 
 - [Building the mod](docs/BUILDING.md): the DLL needs Visual Studio; the mod file needs the Banished Mod Kit.
+- [Linux](docs/LINUX.md): playing through Proton / Wine, and its test checklist.
 - [Running a relay server](docs/RELAY.md) and [the bug report receiver](docs/BUG_REPORTS.md).
 - [How it works](docs/HOW_IT_WORKS.md): lockstep, determinism, towns.
 - [Testing](docs/TESTING.md): the multi-instance test tools.

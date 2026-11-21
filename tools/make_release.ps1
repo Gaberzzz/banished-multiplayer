@@ -1,5 +1,5 @@
 # Packs a release: release\BanishedMultiplayer-<version>.zip (dinput8.dll, bmpShare.pkm, Install.bat, Uninstall.bat,
-# install.ps1, README.txt).
+# install.ps1, install.sh (Linux), README.txt).
 #   .\tools\make_release.ps1 [-Force]
 # The version is kModVersion in src\net.cpp: raise it for every release (the update check only offers HIGHER numbers).
 # Build first: .\mod\make_mod_sources.ps1; .\mod\build_mod.ps1; .\build.ps1
@@ -34,7 +34,7 @@ Copy-Item $dll.FullName, $pkm.FullName $dir
 $relay = Get-Item "$root\build\BanishedRelay.exe"  # a relay server anyone can run (README: "Running your own relay")
 if ($relay.LastWriteTime -lt (Get-Item "$root\server\relay\BanishedRelay.cpp").LastWriteTime) { throw 'build\BanishedRelay.exe is older than its source - run build.ps1' }
 Copy-Item $relay.FullName $dir
-Copy-Item "$root\release_files\Install.bat", "$root\release_files\Uninstall.bat", "$root\release_files\install.ps1" $dir
+Copy-Item "$root\release_files\Install.bat", "$root\release_files\Uninstall.bat", "$root\release_files\install.ps1", "$root\release_files\install.sh" $dir
 $repo = (Get-Content "$root\repo.txt" -TotalCount 1).Trim()
 (Get-Content "$root\release_files\README.txt" -Raw).Replace('{VERSION}', $version).Replace('{REPO}', "https://github.com/$repo") |
     Set-Content "$dir\README.txt" -Encoding utf8
