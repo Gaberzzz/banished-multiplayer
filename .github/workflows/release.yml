@@ -51,7 +51,7 @@ jobs:
         id: pack
         shell: pwsh
         run: |
-          .\tools\make_release.ps1 -Pkm pkm-src\bmpShare.pkm
+          .\tools\make_release.ps1 -ModFile pkm-src\bmpShare.pkm
           $version = [regex]::Match((Get-Content src\net.cpp -Raw), 'kModVersion = "([0-9.]+)"').Groups[1].Value
           "version=$version" >> $env:GITHUB_OUTPUT
 

@@ -1,13 +1,13 @@
 # Packs a release: release\BanishedMultiplayer-<version>.zip (dinput8.dll, bmpShare.pkm, Install.bat, Uninstall.bat,
 # install.ps1, install.sh (Linux), README.txt).
-#   .\tools\make_release.ps1 [-Force] [-Pkm <bmpShare.pkm>]
-# -Pkm packs an already built mod file (e.g. from the previous release when mod\ hasn't changed) instead of
+#   .\tools\make_release.ps1 [-Force] [-ModFile <bmpShare.pkm>]
+# -ModFile packs an already built mod file (e.g. from the previous release when mod\ hasn't changed) instead of
 # mod\bmpShare.pkm, so no Banished Mod Kit is needed; it must hold the build the DLL expects (src\modversion.h).
 # The version is kModVersion in src\net.cpp: raise it for every release (the update check only offers HIGHER numbers).
 # Build first: .\mod\make_mod_sources.ps1; .\mod\build_mod.ps1; .\build.ps1
 # Publish: a GitHub release tagged v<version> with the zip attached (docs\RELEASING.md). Every installed copy sees it
 # at its next start: the update check reads the repository's latest release (repo.txt).
-param([switch]$Force, [string]$Pkm)
+param([switch]$Force, [string]$ModFile)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot
 
@@ -17,11 +17,11 @@ if (-not $version) { throw 'kModVersion not found in src\net.cpp' }
 # the DLL and the mod file must belong together (the DLL warns about any other bmpShare.pkm)
 $dll = Get-Item "$root\build\dinput8.dll"
 $want = [regex]::Match((Get-Content "$root\src\modversion.h" -Raw), 'BMP_MOD_VERSION "([0-9a-f]+)"').Groups[1].Value
-if ($Pkm) {
-    $pkm = Get-Item $Pkm
+if ($ModFile) {
+    $pkm = Get-Item $ModFile
     $text = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($pkm.FullName))
     $found = [regex]::Matches($text, 'Version_([0-9a-f]{8})') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique
-    if ($found -notcontains $want) { throw "$Pkm is mod build $($found -join ', ') but the DLL expects $want - build the mod file (mod\build_mod.ps1)" }
+    if ($found -notcontains $want) { throw "$ModFile is mod build $($found -join ', ') but the DLL expects $want - build the mod file (mod\build_mod.ps1)" }
     $have = $want
 } else {
     $pkm = Get-Item "$root\mod\bmpShare.pkm"
