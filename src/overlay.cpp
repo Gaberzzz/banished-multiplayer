@@ -929,16 +929,21 @@ static bool g_modWarnClosed;
 static void ModWarning() {
     int mod = CompanionModKnown();
     if (mod == kModOk || g_modWarnClosed) return;
+    // Under Wine/Proton the player knows the folder by its Linux path, and explorer.exe is Wine's own file browser
+    // (inside the game's Wine prefix), not theirs: there the Linux path, and no Open button.
     static std::string dir;
     static std::wstring wdir;
     if (dir.empty()) {
         wchar_t p[MAX_PATH];
         GetModuleFileNameW(nullptr, p, MAX_PATH);
         *wcsrchr(p, L'\\') = 0;
-        char a[MAX_PATH * 2];
-        WideCharToMultiByte(CP_UTF8, 0, p, -1, a, sizeof a, nullptr, nullptr);
-        dir = std::string(a) + "\\WinData";
         wdir = std::wstring(p) + L"\\WinData";
+        dir = wine::UnixPath(wdir);
+        if (dir.empty()) {
+            char a[MAX_PATH * 3];
+            WideCharToMultiByte(CP_UTF8, 0, p, -1, a, sizeof a, nullptr, nullptr);
+            dir = std::string(a) + "\\WinData";
+        }
         Log("overlay: companion mod warning shown (%s)", mod == kModMissing ? "missing" : "another build");
     }
     ImGuiIO& io = ImGui::GetIO();
@@ -961,8 +966,10 @@ static void ModWarning() {
     ImGui::TextColored(kDim, "%s", dir.c_str());
     ImGui::PopTextWrapPos();
     ImGui::Spacing();
-    if (ImGui::Button("Open the folder")) ShellExecuteW(nullptr, L"open", L"explorer.exe", wdir.c_str(), nullptr, SW_SHOWNORMAL);
-    ImGui::SameLine();
+    if (!wine::Version()) {
+        if (ImGui::Button("Open the folder")) ShellExecuteW(nullptr, L"open", L"explorer.exe", wdir.c_str(), nullptr, SW_SHOWNORMAL);
+        ImGui::SameLine();
+    }
     if (ImGui::Button("OK")) g_modWarnClosed = true;
     ImGui::End();
 }

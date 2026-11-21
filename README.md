@@ -100,7 +100,9 @@ Do this on every PC that will play.
    WINEDLLOVERRIDES="dinput8=n,b" %command%
    ```
 
-   Without this, Proton uses its own `dinput8.dll` instead of the mod's, and nothing happens.
+   Without this, Proton uses its own `dinput8.dll` instead of the mod's, and nothing happens. If Banished already has
+   launch options, put this in front of them, e.g. `WINEDLLOVERRIDES="dinput8=n,b" gamemoderun %command%`. If they
+   already set `WINEDLLOVERRIDES`, add `;dinput8=n,b` to its value instead of writing it twice.
 
 7. **Start Banished.** In the game's launcher window, open *Video Options*, choose the **DirectX 11** renderer and
    press *Play*. The multiplayer bar, cursors and pings are only drawn with DirectX 11. The main menu now has a
@@ -135,7 +137,8 @@ hosts and **PC B** joins. Choose one way to connect, and use the same one on bot
      right-click A in the Steam friends list → *Join Game* instead.
    - **Direct (IP):** tell B your PC's address. Find it in a terminal with `hostname -I`; the first one, e.g.
      `192.168.1.20`, is usually it. Fedora's firewall allows port 7777 by default. If B can't connect, run
-     `sudo firewall-cmd --add-port=7777/tcp` on A.
+     `sudo firewall-cmd --add-port=7777/tcp` on A. That lasts until A restarts; to keep it, also run it with
+     `--permanent`.
    - **Relay server:** click the copy button next to the **room code** and send the code to B.
 5. When B appears in the player list, click **Start game (2 players)**.
 
@@ -164,7 +167,8 @@ playing.
   version. Run `install.sh` again.
 - **No bar, cursors or pings:** choose the DirectX 11 renderer in the launcher's *Video Options*.
 - **The games keep resyncing:** check that both PCs use the same Proton version (step 3) and the same mod version.
-- **Bug reports:** the **bug** button → **Save** puts the report zip in the Banished folder.
+- **Bug reports:** the **bug** button → **Save** puts the report zip in the Banished folder, and the report window
+  shows that folder's path.
 
 Testing notes and a full test checklist for two Linux PCs: [docs/LINUX.md](docs/LINUX.md).
 

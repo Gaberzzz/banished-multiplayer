@@ -16,7 +16,8 @@ only=""
 for a in "$@"; do
     case "$a" in
         --uninstall|-u) uninstall=1 ;;
-        -h|--help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,10p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -*) echo "Unknown option: $a (see: bash install.sh --help)" >&2; exit 1 ;;
         *) only="$a" ;;
     esac
 done
@@ -28,10 +29,12 @@ die() { echo; echo "${red}$*${off}" >&2; exit 1; }
 is_game() { [ -n "$1" ] && { [ -f "$1/Application-steam-x64.exe" ] || [ -f "$1/Application-x64.exe" ]; }; }
 
 found=()
+declare -A seen=()
 add() {  # add a Banished folder once (by its real path)
     is_game "$1" || return 0
     local r; r="$(realpath -e "$1")"
-    local f; for f in "${found[@]+"${found[@]}"}"; do [ "$f" = "$r" ] && return 0; done
+    [ -z "${seen[$r]+x}" ] || return 0
+    seen[$r]=1
     found+=("$r")
 }
 
@@ -44,9 +47,9 @@ find_banished() {
     if is_game "$here"; then add "$here"; return; fi                       # unpacked straight into the game folder
     if is_game "$(dirname "$here")"; then add "$(dirname "$here")"; return; fi
 
-    # Steam: native (Fedora RPM), Flatpak, Snap; every library listed in libraryfolders.vdf
+    # Steam: native (Fedora RPM, ~/.steam/steam links there too), Flatpak, Snap; every library in libraryfolders.vdf
     local root vdf lib
-    for root in "$HOME/.local/share/Steam" "$HOME/.steam/steam" "$HOME/.steam/root" \
+    for root in "$HOME/.local/share/Steam" "$HOME/.steam/steam" \
                 "$HOME/.var/app/com.valvesoftware.Steam/.local/share/Steam" \
                 "$HOME/.var/app/com.valvesoftware.Steam/data/Steam" "$HOME/snap/steam/common/.local/share/Steam"; do
         [ -d "$root" ] || continue
@@ -58,7 +61,9 @@ find_banished() {
         done
     done
 
-    # GOG: Heroic's list of installed games, then the usual Heroic / Lutris / Bottles / Wine folders
+    # GOG: Heroic's list of installed games, then the usual Heroic / Lutris / Bottles / Wine folders. GOG Galaxy in a
+    # Wine prefix puts the game 7 levels down (<bottle>/drive_c/Program Files (x86)/GOG Galaxy/Games/Banished/...exe);
+    # each prefix's Windows folder (thousands of files) and dosdevices (links to / and other drives) are skipped.
     local json p
     for json in "$HOME/.config/heroic/gog_store/installed.json" \
                 "$HOME/.var/app/com.heroicgameslauncher.hgl/config/heroic/gog_store/installed.json"; do
@@ -71,21 +76,28 @@ find_banished() {
              "$HOME/.local/share/lutris/prefixes" "$HOME/.wine/drive_c"; do
         [ -d "$d" ] || continue
         while IFS= read -r exe; do add "$(dirname "$exe")"; done \
-            < <(find "$d" -maxdepth 6 \( -name 'Application-x64.exe' -o -name 'Application-steam-x64.exe' \) -type f 2>/dev/null)
+            < <(find "$d" -maxdepth 8 \( -path '*/drive_c/windows' -o -name dosdevices \) -prune -o \
+                     -type f \( -name 'Application-x64.exe' -o -name 'Application-steam-x64.exe' \) -print 2>/dev/null)
     done
 
     if [ "${#found[@]}" -eq 0 ] && [ -t 0 ]; then
         echo "Couldn't find Banished by myself."
-        read -r -p "Where is it installed? (the folder with Application-steam-x64.exe or Application-x64.exe): " p
+        read -r -p "Where is it installed? (the folder with Application-steam-x64.exe or Application-x64.exe): " p || p=""
         p="${p/#\~/$HOME}"
         add "$p"
     fi
 }
 
-is_ours() { tr -d '\0' < "$1" | grep -qa 'BanishedMP'; }  # our DLL carries the text "BanishedMP" (UTF-16)
+# Our DLL carries the text "BanishedMP" (UTF-16). grep -c, not -q: -q stops at the first match, tr then dies writing
+# to the closed pipe, and pipefail turns that into "not ours" for any DLL with more than ~64 KB after the text.
+is_ours() { tr -d '\0' < "$1" | LC_ALL=C grep -ca 'BanishedMP' >/dev/null; }
+
+put() {  # copy, unless it is already that very file (the zip unpacked straight into the game folder or WinData)
+    [ "$1" -ef "$2" ] || cp -f "$1" "$2"
+}
 
 windata() {  # the game's WinData folder, whatever its case on disk
-    local w; w="$(find "$1" -maxdepth 1 -type d -iname windata 2>/dev/null | head -n 1)"
+    local w; w="$(find "$1" -maxdepth 1 -type d -iname windata -print -quit 2>/dev/null || true)"
     echo "${w:-$1/WinData}"
 }
 
@@ -108,7 +120,13 @@ for game in "${found[@]}"; do
     pkm="$(windata "$game")/bmpShare.pkm"
     if [ "$uninstall" -eq 1 ]; then
         if [ -f "$dll" ] && is_ours "$dll"; then rm -f "$dll"; echo "  removed dinput8.dll"; fi
-        if [ -f "$backup" ]; then mv "$backup" "$dll"; echo "  put the other mod's dinput8.dll back"; fi
+        if [ -f "$backup" ]; then
+            if [ -e "$dll" ]; then  # yet another mod's dinput8.dll came after ours: leave it, and the backup, alone
+                echo "${yellow}  dinput8.dll belongs to another mod: left it, and the older one stays in dinput8.dll.bmp-backup${off}"
+            else
+                mv "$backup" "$dll"; echo "  put the other mod's dinput8.dll back"
+            fi
+        fi
         if [ -f "$pkm" ]; then rm -f "$pkm"; echo "  removed WinData/bmpShare.pkm"; fi
         continue
     fi
@@ -116,17 +134,17 @@ for game in "${found[@]}"; do
         mv "$dll" "$backup"
         echo "${yellow}  another mod's dinput8.dll was there: kept as dinput8.dll.bmp-backup (--uninstall puts it back)${off}"
     fi
-    cp -f "$here/dinput8.dll" "$dll"
+    put "$here/dinput8.dll" "$dll"
     # subscribed on the Steam Workshop: Steam keeps the mod file up to date - no second copy in WinData
     workshop="$(dirname "$(dirname "$game")")/workshop/content/242920"
     sub=""
-    [ -d "$workshop" ] && sub="$(find "$workshop" -name bmpShare.pkm -type f 2>/dev/null | head -n 1)"
+    [ -d "$workshop" ] && sub="$(find "$workshop" -name bmpShare.pkm -type f -print -quit 2>/dev/null || true)"
     if [ -n "$sub" ]; then
-        rm -f "$pkm"
+        [ "$here/bmpShare.pkm" -ef "$pkm" ] || rm -f "$pkm"
         echo "  mod file: using your Steam Workshop subscription"
     else
         mkdir -p "$(dirname "$pkm")"
-        cp -f "$here/bmpShare.pkm" "$pkm"
+        put "$here/bmpShare.pkm" "$pkm"
     fi
     if [ -f "$game/Application-steam-x64.exe" ]; then steam_games=1; else other_games=1; fi
 done
@@ -144,6 +162,8 @@ if [ "$steam_games" -eq 1 ]; then
     echo "  Steam: right-click Banished -> Properties -> General -> Launch Options, and enter:"
     echo
     echo "      ${bold}WINEDLLOVERRIDES=\"dinput8=n,b\" %command%${off}"
+    echo
+    echo "  (Already have launch options? Put it in front of them. Already set WINEDLLOVERRIDES? Add ;dinput8=n,b to it.)"
     echo
 fi
 if [ "$other_games" -eq 1 ]; then
