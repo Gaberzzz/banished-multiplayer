@@ -19,7 +19,7 @@ game that's already running.
 - **Banished 1.0.7** (the normal 64-bit game), the **Steam or GOG version**. Steam and GOG players can play together.
   On GOG there is no Steam connection: use a relay server or a direct connection (see below). Other builds of the
   game have a different program file; the mod switches itself off there and says so.
-- Windows 10 or 11, or **Linux** (e.g. Fedora) through Proton or Wine: see [Linux](#linux) below.
+- Windows 10 or 11, or **Linux** (e.g. Fedora) through Proton: see [Linux (Fedora)](#linux-fedora) below.
 - **Everybody in a game needs the same version of this mod.** The game tells you when the host's version differs.
 
 ## Install
@@ -46,13 +46,127 @@ To install by hand, copy the two files to the places above. To uninstall, run **
 files). Your settings and logs (`bmp_*.txt`, `bmp*.log` in the Banished folder) are left behind; delete them if
 you like.
 
-### Linux
+## Linux (Fedora)
 
-Banished runs on Linux through Proton (Steam) or Wine (GOG), and so does the mod: same zip. Unpack it, run
-`bash install.sh`, then set Banished's Steam launch options to `WINEDLLOVERRIDES="dinput8=n,b" %command%` (Wine
-otherwise uses its own `dinput8.dll` and the mod doesn't start). All players in a game should use the same Proton
-version. Details, GOG launchers and a test checklist: [docs/LINUX.md](docs/LINUX.md). Games that mix Linux and Windows
-players haven't been tested yet.
+Banished has no Linux version: on Linux the Windows game runs through **Proton** (Steam's built-in Windows
+compatibility layer), and the mod runs inside it. You use the same release zip as Windows players. Written for
+**Fedora 45**; other distributions work the same way, apart from installing Steam. Games where every player is on
+Linux are the supported setup. Games that mix Linux and Windows players haven't been tested yet.
+
+### Install on Fedora
+
+Do this on every PC that will play.
+
+1. **Install Steam.** From RPM Fusion (enable the repository, then install Steam):
+
+   ```
+   sudo dnf install https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm \
+                    https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm
+   sudo dnf install steam
+   ```
+
+   Or the Flatpak from Flathub: `flatpak install flathub com.valvesoftware.Steam`. The installer below finds either.
+   AMD and Intel graphics work out of the box. With an **NVIDIA** card, install its driver from RPM Fusion first
+   (`sudo dnf install akmod-nvidia`, then reboot).
+
+2. **Install Banished.** Start Steam and log in. Check that *Steam* → *Settings* → *Compatibility* → *Enable Steam
+   Play for all other titles* is on, then install Banished from your library.
+
+3. **Pick one Proton version.** Right-click Banished → *Properties* → *Compatibility* → tick *Force the use of a
+   specific Steam Play compatibility tool* and choose a numbered Proton version (e.g. the newest *Proton 10.0*), not
+   *Experimental*. **Choose the same version on every PC**, and update all of them together. Lockstep multiplayer
+   needs every PC to calculate exactly the same results, and part of the maths comes from Proton.
+
+4. **Start Banished once** (*Play*), wait for the main menu, and quit. That lets Proton set the game up.
+
+5. **Install the mod.** Download the newest `BanishedMultiplayer-<version>.zip` from the
+   [Releases page](../../releases/latest), then in a terminal:
+
+   ```
+   cd ~/Downloads
+   unzip BanishedMultiplayer-*.zip -d BanishedMultiplayer
+   bash BanishedMultiplayer/install.sh
+   ```
+
+   It finds Banished (in any Steam library, normal or Flatpak) and copies `dinput8.dll` into the Banished folder and
+   `bmpShare.pkm` into `Banished/WinData`. If it can't find the game, give it the folder:
+   `bash BanishedMultiplayer/install.sh /path/to/Banished`. To find that folder, right-click Banished in Steam →
+   *Manage* → *Browse local files*. Releases up to 0.9.7 don't contain `install.sh`: download it from
+   [`release_files/install.sh`](release_files/install.sh) and put it in the unpacked folder.
+
+6. **Tell Proton to load the mod.** Right-click Banished → *Properties* → *General* → *Launch Options*, and enter:
+
+   ```
+   WINEDLLOVERRIDES="dinput8=n,b" %command%
+   ```
+
+   Without this, Proton uses its own `dinput8.dll` instead of the mod's, and nothing happens.
+
+7. **Start Banished.** In the game's launcher window, open *Video Options*, choose the **DirectX 11** renderer and
+   press *Play*. The multiplayer bar, cursors and pings are only drawn with DirectX 11. The main menu now has a
+   **Multiplayer** button, and a `bmp.log` file appears in the Banished folder.
+
+To uninstall: `bash BanishedMultiplayer/install.sh --uninstall`, and clear the launch options.
+
+GOG version (Heroic, Lutris, Bottles): `install.sh` finds those too. Instead of the Steam launch option, set the DLL
+override `dinput8` = `n,b` in the launcher; the installer prints where.
+
+### Running a multiplayer game on Linux
+
+Everybody needs the same mod version, the same Proton version, and the same other mods (if any). Below, **PC A**
+hosts and **PC B** joins. Choose one way to connect, and use the same one on both PCs:
+
+| Connect through | When | What B needs from A |
+|---|---|---|
+| **Steam** | Both are logged in to Steam and are Steam friends. Easiest | Nothing: A invites B |
+| **Direct (IP)** | Both PCs are on the same home network (or A forwards a port on the router) | A's address, e.g. `192.168.1.20:7777` |
+| **Relay server** | Neither of the above. Somebody runs a relay ([docs/RELAY.md](docs/RELAY.md)) | The room code A gets |
+
+**On PC A (host):**
+
+1. Main menu → **Multiplayer**. Check **Your name** (it's your Steam name by default).
+2. Choose **Share one town** (you both run one town) or **Separate towns** (each builds their own town on one map).
+   Then **New town** / **New map** for a fresh map (choose map size, terrain and climate), or **Load town** /
+   **Continue a saved game** to carry on from one of your saves.
+3. Under **Connect through**, choose Steam, Direct (IP) or Relay server. For Direct, leave **Port when hosting** at
+   `7777`. For Relay, fill in the **Relay address**.
+4. Click **Host game**. The lobby window opens, then:
+   - **Steam:** click **Invite players** and invite B in the Steam overlay. If the overlay doesn't open, B can
+     right-click A in the Steam friends list → *Join Game* instead.
+   - **Direct (IP):** tell B your PC's address. Find it in a terminal with `hostname -I`; the first one, e.g.
+     `192.168.1.20`, is usually it. Fedora's firewall allows port 7777 by default. If B can't connect, run
+     `sudo firewall-cmd --add-port=7777/tcp` on A.
+   - **Relay server:** click the copy button next to the **room code** and send the code to B.
+5. When B appears in the player list, click **Start game (2 players)**.
+
+**On PC B (join):**
+
+1. Main menu → **Multiplayer**, and choose the **same** option under **Connect through** as A.
+2. Join:
+   - **Steam:** accept A's invite, or right-click A in the Steam friends list → *Join Game*.
+   - **Direct (IP):** under **Join a game**, type A's address with the port, e.g. `192.168.1.20:7777`, and click
+     **Join**.
+   - **Relay server:** enter the same **Relay address** as A, paste the room code under **Join a game** (paste
+     button or Ctrl+V), and click **Join**.
+3. The window says *Connected to the host - Waiting for the host to start...*. The game loads when A starts it.
+
+**While playing:** game speed and pause are shared. The bar at the top has **Trade** and **Share** (separate towns),
+**Resync**, **Leave** and the **bug** button ([In the game](#in-the-game)). To save, A saves as usual. To continue
+next time, A hosts again with **Load town** / **Continue a saved game**. If B drops out, B can join again while A keeps
+playing.
+
+### Problems on Linux
+
+- **No Multiplayer button, and no `bmp.log` in the Banished folder:** the mod wasn't loaded. Check the launch option
+  from step 6. In Steam the quotes must be straight `"`, not curly ones. Check that `dinput8.dll` is in the Banished
+  folder next to `Application-steam-x64.exe`.
+- **`bmp.log` is there but no Multiplayer button:** the main menu says which file is missing or of the wrong
+  version. Run `install.sh` again.
+- **No bar, cursors or pings:** choose the DirectX 11 renderer in the launcher's *Video Options*.
+- **The games keep resyncing:** check that both PCs use the same Proton version (step 3) and the same mod version.
+- **Bug reports:** the **bug** button → **Save** puts the report zip in the Banished folder.
+
+Testing notes and a full test checklist for two Linux PCs: [docs/LINUX.md](docs/LINUX.md).
 
 ## Playing
 
@@ -128,7 +242,7 @@ the line `updatecheck=0` to `Banished\bmp_settings.txt`.
 ## For developers
 
 - [Building the mod](docs/BUILDING.md): the DLL needs Visual Studio; the mod file needs the Banished Mod Kit.
-- [Linux](docs/LINUX.md): playing through Proton / Wine, and its test checklist.
+- [Linux](docs/LINUX.md): test checklist and notes for Proton / Wine.
 - [Running a relay server](docs/RELAY.md) and [the bug report receiver](docs/BUG_REPORTS.md).
 - [How it works](docs/HOW_IT_WORKS.md): lockstep, determinism, towns.
 - [Testing](docs/TESTING.md): the multi-instance test tools.

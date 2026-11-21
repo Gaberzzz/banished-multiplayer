@@ -1,70 +1,34 @@
-# Linux (Fedora, Proton / Wine)
+# Linux (Proton / Wine): details and testing
 
-Banished has no Linux version, so on Linux the Windows game runs through **Proton** (Steam) or **Wine** (GOG, through
-Heroic, Lutris or Bottles). The mod runs inside the game, so Linux players use the **same release zip** as Windows
-players. The only Linux-specific parts are the installer (`install.sh`) and one Wine setting.
+**Installing on Fedora and running a multiplayer game are in the main README:
+[Linux (Fedora)](../README.md#linux-fedora).** This page has the rest: the GOG launchers, what the mod does
+differently under Wine, a test checklist for two Linux PCs, and notes for later.
 
-Status: written and checked for **groups where every player is on Linux**. Games that mix Linux and Windows players
-haven't been tested yet (see [Linux with Windows players](#linux-with-windows-players)).
+Banished has no Linux version, so on Linux the Windows game runs through Proton (Steam) or Wine (GOG). Linux players
+use the same release zip as Windows players. The only Linux-specific parts are the installer (`install.sh`) and one
+Wine setting.
 
-## Install
+## GOG version: the DLL override in each launcher
 
-1. Install Banished. On Fedora, Steam comes from RPM Fusion (`sudo dnf install steam` once the *nonfree* repository
-   is enabled) or Flathub (`flatpak install flathub com.valvesoftware.Steam`). The installer handles both. Start
-   Banished once through Steam, so that Proton sets the game up, then close it.
-2. Download `BanishedMultiplayer-<version>.zip` from the Releases page, unpack it and run:
+Wine normally uses its own built-in `dinput8.dll` and ignores the one in the game folder. On Steam the launch option
+`WINEDLLOVERRIDES="dinput8=n,b" %command%` fixes that. For the GOG version, set the same thing in your launcher:
 
-   ```
-   bash install.sh
-   ```
+- **Heroic:** the game's *Settings* → *Advanced* → *Environment Variables*: `WINEDLLOVERRIDES` = `dinput8=n,b`.
+- **Lutris:** *Configure* → *Runner options* → *DLL overrides*: `dinput8` = `n,b`.
+- **Bottles:** the bottle's *Settings* → *DLL Overrides*: `dinput8` = native, builtin.
+- **Plain Wine:** `winecfg` → *Libraries*: add `dinput8`, set it to *Native then Builtin*.
 
-   It finds Banished (Steam libraries, Flatpak Steam, Heroic / Lutris / Bottles for GOG) and copies `dinput8.dll` into
-   the Banished folder and `bmpShare.pkm` into `Banished/WinData`. If it doesn't find the game, give it the folder:
-   `bash install.sh ~/path/to/Banished`. To see the folder in Steam, right-click Banished → *Manage* → *Browse
-   local files*.
-3. **Tell Wine to load the mod's DLL** (once). Wine normally uses its own built-in `dinput8.dll` and ignores the one
-   in the game folder, so the mod doesn't start and there is no Multiplayer button.
-   - **Steam:** right-click Banished → *Properties* → *General* → *Launch Options*:
-     ```
-     WINEDLLOVERRIDES="dinput8=n,b" %command%
-     ```
-   - **Heroic:** the game's *Settings* → *Advanced* → *Environment Variables*: `WINEDLLOVERRIDES` = `dinput8=n,b`.
-   - **Lutris:** *Configure* → *Runner options* → *DLL overrides*: `dinput8` = `n,b`.
-   - **Bottles:** the bottle's *Settings* → *DLL Overrides*: `dinput8` = native, builtin.
-   - **Plain Wine:** `winecfg` → *Libraries*: add `dinput8`, set it to *Native then Builtin*.
-4. Start Banished. In its launcher choose the **DirectX 11** renderer (*Video Options*): the multiplayer bar, cursors
-   and pings are drawn only with DirectX 11 (Proton runs it through DXVK). The main menu now has a **Multiplayer**
-   button.
+`install.sh` looks for GOG installs in Heroic's list of installed games and under `~/Games`, the Bottles and Lutris
+folders and `~/.wine`.
 
-To uninstall: `bash install.sh --uninstall`, and remove the launch option.
+## What the mod does differently under Wine
 
-### It doesn't work
-
-- **No `bmp.log` in the Banished folder after starting the game:** the DLL wasn't loaded. Check the launch option /
-  DLL override from step 3 (in Steam, the quotes must be straight `"`, not curly). Check that `dinput8.dll` is next to
-  `Application-steam-x64.exe`.
-- **`bmp.log` is there, but no Multiplayer button:** the message on the main menu says which file is missing or of the
-  wrong version. Run `install.sh` again.
-- **The mod's first log lines** show what it found: `running under Wine ...` names the Wine/Proton version. If that
-  line is missing, the game isn't running under Wine.
-- **Bug reports:** the **Save** button puts the report zip in the Banished folder. Under Proton the Windows Desktop
-  is a folder inside the game's Wine prefix (`steamapps/compatdata/242920/pfx/...`), where nobody would find it.
-  Reports say which Wine version you run, and Linux user names in folder paths are removed from them.
-
-## Playing with two Linux PCs
-
-- **Use the same Proton version on both PCs.** In Steam, set Banished → *Properties* → *Compatibility* → *Force the
-  use of a specific Steam Play compatibility tool* to the same Proton version on every PC, and update them together.
-  Every PC must calculate exactly the same results, and the maths functions come partly from Wine. The same Proton
-  everywhere removes that variable.
-- **Connecting:**
-  - **Steam:** works as on Windows, through Proton's Steam bridge. *Invite players* needs the Steam overlay. If the
-    overlay doesn't open, the others can right-click the host in their Steam friends list → *Join Game*.
-  - **Direct (IP)** on the same home network: the others type the host's LAN address (`ip -4 addr`, e.g.
-    `192.168.1.20`) and port 7777. Fedora Workstation's firewall already allows ports above 1024. On other setups
-    open it on the host: `sudo firewall-cmd --add-port=7777/tcp` (add `--permanent` and run
-    `sudo firewall-cmd --reload` to keep it).
-  - **Relay:** the Python relay (`tools/bmp_relay.py`, [RELAY.md](RELAY.md)) runs natively on Linux.
+- **Log:** `bmp.log` (in the Banished folder) starts with `bmp loaded` and `running under Wine ...`, which names the
+  Wine/Proton version and the Linux kernel. If that line is missing, the game isn't running under Wine.
+- **Bug reports:** **Save** puts the zip in the Banished folder instead of on the Windows Desktop. Under Proton the
+  Desktop is a folder inside the game's Wine prefix (`steamapps/compatdata/242920/pfx/...`), where nobody would find
+  it. `bmp.log` records the full Linux path of the saved zip. Reports have a `wine:` line, and Linux user names in
+  folder paths (`/home/<name>/...`) are replaced with `<user>`.
 
 ## Test checklist
 
